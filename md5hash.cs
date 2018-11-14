@@ -1,4 +1,9 @@
 ﻿// v1.0.0 - first release
+// v1.0.1 - improved Printhelp()
+//			fix FilInfo.Length file not found
+// v1.0.2 - by default ignore soft links
+// v1.0.3 - attach mode wasn't using fullpath
+// v1.0.4 - if file not found, pause for 100 ms then try again
 
 using System;
 using System.Collections.Generic;
@@ -43,6 +48,7 @@ namespace md5hash {
 		static long minsize = 0, maxsize = long.MaxValue;
 		static byte[] hash;
 		static string hashString;
+		static bool followlink = false;
 
 		public static void TextFgColor(System.ConsoleColor color) {
 			System.Console.ForegroundColor = color;
@@ -159,7 +165,7 @@ namespace md5hash {
 			}
 			CalculateMD5(filename);
 			TextFgColor(ConsoleColor.Green);
-			Console.WriteLine(filename + "\tAttach MD5\t" + hashString);
+			Console.WriteLine(fullpath + "\tAttach MD5\t" + hashString);
 			try {
 				handle = CreateFileW(filename + ":md5", GENERIC_WRITE, FILE_SHARE_WRITE, IntPtr.Zero, OPEN_ALWAYS, 0, IntPtr.Zero);
 			} catch (Exception ex) {
@@ -186,18 +192,24 @@ namespace md5hash {
 		}
 
 		static void PrintHelp() {
-			Console.WriteLine("md5hash v1.0 - (C)2018 Y0tsuya");
-			Console.WriteLine("md5hash -[mode] -target [file] -min [size] -max [size]");
+			Console.WriteLine("md5hash v1.0.4 - (C)2018 Y0tsuya");
+			Console.WriteLine("md5hash -[mode] -target [file] -min [size] -max [size] -followlink");
 			Console.WriteLine("\tmodes:");
-			Console.WriteLine("\t-read: read md5 stream");
+			Console.WriteLine("\t-read: read attached md5 stream");
 			Console.WriteLine("\t-generate: generate and print md5 checksum");
 			Console.WriteLine("\t-verify: generate md5 and verify against attached checksum");
 			Console.WriteLine("\t-attach: generate md5 and attach it to the target");
 			Console.WriteLine("\t-detach: detach md5 checksum from the target");
+			Console.WriteLine("");
+			Console.WriteLine("\t-min: minimum file size to consider (in bytes), defaults to 0");
+			Console.WriteLine("\t-max: maximum file size to consider (in bytes), defaults to 64-bit max");
+			Console.WriteLine("\t-followlink: follow soft links");
 		}
 
 		static void Main(string[] args) {
 			int c;
+			FileInfo fi = null;
+			string fullpath = "";
 
 			if (args.Length == 0) {
 				PrintHelp();
@@ -239,7 +251,32 @@ namespace md5hash {
 				CleanExit();
 			}
 
-			FileInfo fi = new FileInfo(target);
+			if (!File.Exists(target)) {
+				System.Threading.Thread.Sleep(100);
+				if (!File.Exists(target)) { // file really doesn't exist
+					fullpath = Path.GetFullPath(target);
+					TextFgColor(ConsoleColor.Red);
+					Console.WriteLine(fullpath + "\tNOT FOUND");
+					CleanExit();
+				}
+			}
+
+			if ((File.GetAttributes(target) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint) {
+				if (!followlink) {
+					fullpath = Path.GetFullPath(target);
+					TextFgColor(ConsoleColor.Yellow);
+					Console.WriteLine(fullpath + "\tLINK");
+					CleanExit();
+				}
+			}
+
+			try {
+				fi = new FileInfo(target);
+			} catch (IOException ex) {
+				TextFgColor(ConsoleColor.Red);
+				Console.WriteLine(fullpath + "\t" + ex.Message);
+				CleanExit();
+			}
 
 			if (fi.Length < minsize) {
 				TextFgColor(ConsoleColor.Yellow);
