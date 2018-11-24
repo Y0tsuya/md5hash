@@ -4,6 +4,8 @@
 // v1.0.2 - by default ignore soft links
 // v1.0.3 - attach mode wasn't using fullpath
 // v1.0.4 - if file not found, pause for 100 ms then try again
+// v1.0.5 - preserve modify time after attachment
+// v1.0.6 - Switch to AlphaFS
 
 using System;
 using System.Collections.Generic;
@@ -65,11 +67,11 @@ namespace md5hash {
 		}
 
 		static void CalculateMD5(string filename) {
-			string fullpath = Path.GetFullPath(filename);
+			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
 
 			try {
 				using (var md5 = MD5.Create()) {
-					using (var stream = File.OpenRead(filename)) {
+					using (var stream = Alphaleonis.Win32.Filesystem.File.OpenRead(filename)) {
 						hash = md5.ComputeHash(stream);
 						hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
 					}
@@ -85,7 +87,7 @@ namespace md5hash {
 			hash = new byte[16];
 			uint bytesread = 0;
 			uint handle = 0;
-			string fullpath = Path.GetFullPath(filename);
+			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
 
 			try {
 				handle = CreateFileW(filename + ":md5", GENERIC_READ, FILE_SHARE_READ, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
@@ -107,7 +109,7 @@ namespace md5hash {
 		}
 
 		static void md5Generate(string filename) {
-			string fullpath = Path.GetFullPath(filename);
+			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
 
 			CalculateMD5(filename);
 			TextFgColor(ConsoleColor.Green);
@@ -120,7 +122,7 @@ namespace md5hash {
 			uint bytesread = 0;
 			uint handle = 0;
 
-			string fullpath = Path.GetFullPath(filename);
+			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
 			try {
 				handle = CreateFileW(filename + ":md5", GENERIC_READ, FILE_SHARE_READ, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
 			} catch (Exception ex) {
@@ -149,8 +151,10 @@ namespace md5hash {
 		static void md5Attach(string filename) {
 			uint byteswritten = 0;
 			uint handle = 0;
+			DateTime modify;
 
-			string fullpath = Path.GetFullPath(filename);
+			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
+			modify = Alphaleonis.Win32.Filesystem.File.GetLastWriteTime(filename);
 			try {
 				handle = CreateFileW(filename + ":md5", GENERIC_READ, FILE_SHARE_READ, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
 			} catch (Exception ex) {
@@ -175,10 +179,11 @@ namespace md5hash {
 			}
 			WriteFile(handle, hash, 16, out byteswritten, IntPtr.Zero);
 			CloseHandle(handle);
+			Alphaleonis.Win32.Filesystem.File.SetLastWriteTime(filename, modify);
 		}
 
 		static void md5Detach(string filename) {
-			string fullpath = Path.GetFullPath(filename);
+			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
 
 			try {
 				DeleteFileW(filename + ":md5");
@@ -192,7 +197,7 @@ namespace md5hash {
 		}
 
 		static void PrintHelp() {
-			Console.WriteLine("md5hash v1.0.4 - (C)2018 Y0tsuya");
+			Console.WriteLine("md5hash v1.0.6 - (C)2018 Y0tsuya");
 			Console.WriteLine("md5hash -[mode] -target [file] -min [size] -max [size] -followlink");
 			Console.WriteLine("\tmodes:");
 			Console.WriteLine("\t-read: read attached md5 stream");
@@ -208,7 +213,7 @@ namespace md5hash {
 
 		static void Main(string[] args) {
 			int c;
-			FileInfo fi = null;
+			Alphaleonis.Win32.Filesystem.FileInfo fi = null;
 			string fullpath = "";
 
 			if (args.Length == 0) {
@@ -251,19 +256,19 @@ namespace md5hash {
 				CleanExit();
 			}
 
-			if (!File.Exists(target)) {
+			if (!Alphaleonis.Win32.Filesystem.File.Exists(target)) {
 				System.Threading.Thread.Sleep(100);
-				if (!File.Exists(target)) { // file really doesn't exist
-					fullpath = Path.GetFullPath(target);
+				if (!Alphaleonis.Win32.Filesystem.File.Exists(target)) { // file really doesn't exist
+					fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(target);
 					TextFgColor(ConsoleColor.Red);
 					Console.WriteLine(fullpath + "\tNOT FOUND");
 					CleanExit();
 				}
 			}
 
-			if ((File.GetAttributes(target) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint) {
+			if ((Alphaleonis.Win32.Filesystem.File.GetAttributes(target) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint) {
 				if (!followlink) {
-					fullpath = Path.GetFullPath(target);
+					fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(target);
 					TextFgColor(ConsoleColor.Yellow);
 					Console.WriteLine(fullpath + "\tLINK");
 					CleanExit();
@@ -271,7 +276,7 @@ namespace md5hash {
 			}
 
 			try {
-				fi = new FileInfo(target);
+				fi = new Alphaleonis.Win32.Filesystem.FileInfo(target);
 			} catch (IOException ex) {
 				TextFgColor(ConsoleColor.Red);
 				Console.WriteLine(fullpath + "\t" + ex.Message);
