@@ -6,6 +6,8 @@
 // v1.0.4 - if file not found, pause for 100 ms then try again
 // v1.0.5 - preserve modify time after attachment
 // v1.0.6 - Switch to AlphaFS
+// v1.0.7 - Decode/Encode size units
+// v1.0.8 - output encoding adjustment
 
 using System;
 using System.Collections.Generic;
@@ -62,7 +64,7 @@ namespace md5hash {
 
 		static void CleanExit() {
 			System.Console.ResetColor();
-			Console.OutputEncoding = System.Text.Encoding.Default;
+//			Console.OutputEncoding = System.Text.Encoding.Default;
 			Environment.Exit(1);
 		}
 
@@ -196,8 +198,47 @@ namespace md5hash {
 			Console.WriteLine(fullpath + "\tDetach MD5\t");
 		}
 
+		const int KB = 1024;
+		const int MB = 1024 * 1024;
+		const int GB = 1024 * 1024 * 1024;
+
+		static long DecodeByteSize(string num) {
+			long bytes;
+
+			if (num.Substring(num.Length - 2) == "GB") {
+				bytes = Convert.ToInt64(num.Substring(0, num.Length - 2)) * GB;
+			} else if (num.Substring(num.Length - 2) == "MB") {
+				bytes = Convert.ToInt64(num.Substring(0, num.Length - 2)) * MB;
+			} else if (num.Substring(num.Length - 2) == "KB") {
+				bytes = Convert.ToInt64(num.Substring(0, num.Length - 2)) * KB;
+			} else {
+				bytes = Convert.ToInt64(num);
+			}
+			return bytes;
+		}
+
+		static string EncodeByteSize(long num) {
+			string si;
+			double fp;
+
+			if (num > GB) {
+				fp = (double)num / (double)GB;
+				si = String.Format("{0:F2}GB", fp);
+			} else if (num > MB) {
+				fp = (double)num / (double)MB;
+				si = String.Format("{0:F2}MB", fp);
+			} else if (num > KB) {
+				fp = (double)num / (double)KB;
+				si = String.Format("{0:F2}KB", fp);
+			} else {
+				si = String.Format("{0} Bytes", num);
+			}
+
+			return si;
+		}
+
 		static void PrintHelp() {
-			Console.WriteLine("md5hash v1.0.6 - (C)2018 Y0tsuya");
+			Console.WriteLine("md5hash v1.0.8 - (C)2018-2019 Y0tsuya");
 			Console.WriteLine("md5hash -[mode] -target [file] -min [size] -max [size] -followlink");
 			Console.WriteLine("\tmodes:");
 			Console.WriteLine("\t-read: read attached md5 stream");
@@ -237,10 +278,10 @@ namespace md5hash {
 					target = args[c + 1];
 					c++;
 				} else if (args[c] == "-min") {
-					minsize = Convert.ToInt64(args[c + 1]);
+					minsize = DecodeByteSize(args[c + 1]);
 					c++;
 				} else if (args[c] == "-max") {
-					maxsize = Convert.ToInt64(args[c + 1]);
+					maxsize = DecodeByteSize(args[c + 1]);
 					c++;
 				}
 			}
@@ -285,13 +326,13 @@ namespace md5hash {
 
 			if (fi.Length < minsize) {
 				TextFgColor(ConsoleColor.Yellow);
-				Console.WriteLine(target + "\tunder minimum size " + minsize + " bytes");
+				Console.WriteLine(target + "\tunder minimum size " + EncodeByteSize(minsize));
 				CleanExit();
 			}
 
 			if (fi.Length > maxsize) {
 				TextFgColor(ConsoleColor.Yellow);
-				Console.WriteLine(target + "\tover maximum size " + maxsize + " bytes");
+				Console.WriteLine(target + "\tover maximum size " + EncodeByteSize(maxsize));
 				CleanExit();
 			}
 
