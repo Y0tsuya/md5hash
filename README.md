@@ -11,6 +11,7 @@ Armed with this information, I wrote a C# .NET console application that can gene
 
 Run this without arguments to get the commnad-line help.
 
+```
 md5hash -[mode] -target [file] -min [size] -max [size] -followlink
         modes:
         -read: read attached md5 stream
@@ -18,7 +19,6 @@ md5hash -[mode] -target [file] -min [size] -max [size] -followlink
         -verify: generate md5 and verify against attached checksum
         -attach: generate md5 and attach it to the target
         -detach: detach md5 checksum from the target
-
         -min: minimum file size to consider (in bytes), defaults to 0
         -max: maximum file size to consider (in bytes), defaults to 64-bit max
         -followlink: follow soft links
