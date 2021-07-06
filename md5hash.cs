@@ -1,4 +1,13 @@
-﻿// v1.0.0 - first release
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.IO;
+using System.Security.Cryptography;
+using System.Runtime.InteropServices;
+
+// v1.0.0 - first release
 // v1.0.1 - improved Printhelp()
 //			fix FilInfo.Length file not found
 // v1.0.2 - by default ignore soft links
@@ -8,15 +17,7 @@
 // v1.0.6 - Switch to AlphaFS
 // v1.0.7 - Decode/Encode size units
 // v1.0.8 - output encoding adjustment
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.IO;
-using System.Security.Cryptography;
-using System.Runtime.InteropServices;
+// v1.0.9 - Add verbose
 
 namespace md5hash {
 	class md5hash {
@@ -53,6 +54,7 @@ namespace md5hash {
 		static byte[] hash;
 		static string hashString;
 		static bool followlink = false;
+		static bool verbose;
 
 		public static void TextFgColor(System.ConsoleColor color) {
 			System.Console.ForegroundColor = color;
@@ -167,6 +169,7 @@ namespace md5hash {
 			if (handle != 0xFFFFFFFF) {
 				TextFgColor(ConsoleColor.Yellow);
 				Console.WriteLine(fullpath + "\tExisting MD5");
+				CloseHandle(handle);
 				CleanExit();
 			}
 			CalculateMD5(filename);
@@ -180,6 +183,10 @@ namespace md5hash {
 				CleanExit();
 			}
 			WriteFile(handle, hash, 16, out byteswritten, IntPtr.Zero);
+			if (byteswritten != 16) {
+				TextFgColor(ConsoleColor.Red);
+				Console.WriteLine("16-byte MD5 Write Failure");
+			}
 			CloseHandle(handle);
 			Alphaleonis.Win32.Filesystem.File.SetLastWriteTime(filename, modify);
 		}
@@ -238,7 +245,7 @@ namespace md5hash {
 		}
 
 		static void PrintHelp() {
-			Console.WriteLine("md5hash v1.0.8 - (C)2018-2019 Y0tsuya");
+			Console.WriteLine("md5hash v1.0.9 - (C)2018-2019 Y0tsuya");
 			Console.WriteLine("md5hash -[mode] -target [file] -min [size] -max [size] -followlink");
 			Console.WriteLine("\tmodes:");
 			Console.WriteLine("\t-read: read attached md5 stream");
@@ -250,6 +257,7 @@ namespace md5hash {
 			Console.WriteLine("\t-min: minimum file size to consider (in bytes), defaults to 0");
 			Console.WriteLine("\t-max: maximum file size to consider (in bytes), defaults to 64-bit max");
 			Console.WriteLine("\t-followlink: follow soft links");
+			Console.WriteLine("\t-verbose: print extra debug info");
 		}
 
 		static void Main(string[] args) {
@@ -262,10 +270,13 @@ namespace md5hash {
 				CleanExit();
 			}
 
+			verbose = false;
 			Console.OutputEncoding = System.Text.Encoding.Unicode;
 			for (c = 0 ; c < args.Length ; c++) {
 				if (args[c] == "-read") {
 					opmode = Mode.Read;
+				} else if (args[c] == "-verbose") {
+					verbose = true;
 				} else if (args[c] == "-generate") {
 					opmode = Mode.Generate;
 				} else if (args[c] == "-verify") {
@@ -295,6 +306,14 @@ namespace md5hash {
 				TextFgColor(ConsoleColor.Red);
 				Console.WriteLine("No target file specified");
 				CleanExit();
+			}
+
+			if (verbose) {
+				TextFgColor(ConsoleColor.Cyan);
+				Console.WriteLine("Mode: " + opmode.ToString());
+				Console.WriteLine("Min: " + minsize);
+				Console.WriteLine("Max: " + maxsize);
+				Console.WriteLine("Target: " + target);
 			}
 
 			if (!Alphaleonis.Win32.Filesystem.File.Exists(target)) {
