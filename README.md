@@ -1,5 +1,5 @@
 # md5hash
-Attach MD5 checksums to NTFS ADS
+Attach MD5 checksums to NTFS ADS.  This is a command-line console program and requires .NET 6.0 runtime.
 
 I have a full backup Drivepool array using 5x SA120 enclosures. Due to the large number of drives it's not practical for me to SnapRAID it, so I'm running it without parity protection. Stablebit Scanner chokes on any setup with a large number of drives, so that's out. So what's a datahoarder to do short of resorting to ZFS or ReFS?
 
