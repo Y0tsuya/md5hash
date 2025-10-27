@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -6,55 +6,30 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
+using System.Reflection;
+using CustomLibs;
 
-// v1.0.0 - first release
-// v1.0.1 - improved Printhelp()
+// v1.0.0	first release
+// v1.0.1	improved Printhelp()
 //			fix FilInfo.Length file not found
-// v1.0.2 - by default ignore soft links
-// v1.0.3 - attach mode wasn't using fullpath
-// v1.0.4 - if file not found, pause for 100 ms then try again
-// v1.0.5 - preserve modify time after attachment
-// v1.0.6 - Switch to AlphaFS
-// v1.0.7 - Decode/Encode size units
-// v1.0.8 - output encoding adjustment
-// v1.0.9 - Add verbose
+// v1.0.2	by default ignore soft links
+// v1.0.3	attach mode wasn't using fullpath
+// v1.0.4	if file not found, pause for 100 ms then try again
+// v1.0.5	preserve modify time after attachment
+// v1.0.6	Switch to AlphaFS
+// v1.0.7	Decode/Encode size units
+// v1.0.8	output encoding adjustment
+// v1.0.9	Add verbose
+// v1.1.0	Refactor Console.WriteLine
+// v2.0.0	Migrate to .NET 6
+//			Integrate HashInterop
+// v2.0.1	Fix attach operation generating 0000000 MD5
+// v2.0.2	Skip already attached hashes
 
 namespace md5hash {
 	class md5hash {
-		[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-		static extern uint CreateFileW(string lpFileName, uint dwDesiredAccess, uint dwShareMode, IntPtr SecurityFileAttributes, uint dwCreationDisposition, uint dwFlagAndAttributes, IntPtr hTemplateFile);
-		[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-		static extern bool DeleteFileW(string lpFileName);
-		[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-		static extern bool CloseHandle(uint handle);
-		[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-		static extern bool ReadFile(uint hFile, [Out] byte[] lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped);
-		[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-		static extern int WriteFile(uint hFile, [In] byte[] lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
-
-		public const uint GENERIC_ALL = 0x10000000;
-		public const uint GENERIC_EXECUTE = 0x20000000;
-		public const uint GENERIC_WRITE = 0x40000000;
-		public const uint GENERIC_READ = 0x80000000;
-		public const uint FILE_SHARE_READ = 0x00000001;
-		public const uint FILE_SHARE_WRITE = 0x00000002;
-		public const uint FILE_SHARE_DELETE = 0x00000004;
-		public const uint CREATE_NEW = 1;
-		public const uint CREATE_ALWAYS = 2;
-		public const uint OPEN_EXISTING = 3;
-		public const uint OPEN_ALWAYS = 4;
-		public const uint TRUNCATE_EXISTING = 5;
-		public const int FILE_ATTRIBUTE_NORMAL = 0x80;
 
 		enum Mode { None, Read, Generate, Verify, Attach, Detach };
-
-		static string target = "";
-		static Mode opmode = Mode.None;
-		static long minsize = 0, maxsize = long.MaxValue;
-		static byte[] hash;
-		static string hashString;
-		static bool followlink = false;
-		static bool verbose;
 
 		public static void TextFgColor(System.ConsoleColor color) {
 			System.Console.ForegroundColor = color;
@@ -64,145 +39,135 @@ namespace md5hash {
 			System.Console.BackgroundColor = color;
 		}
 
+		static void Write(string text) {
+			System.Console.Write(text);
+		}
+
+		static void Write(string text, System.ConsoleColor color) {
+			System.Console.ForegroundColor = color;
+			System.Console.Write(text);
+		}
+
+		static void WriteLine(string text) {
+			System.Console.WriteLine(text);
+		}
+
+		static void WriteLine(string text, System.ConsoleColor color) {
+			System.Console.ForegroundColor = color;
+			System.Console.WriteLine(text);
+		}
+
 		static void CleanExit() {
 			System.Console.ResetColor();
-//			Console.OutputEncoding = System.Text.Encoding.Default;
+			//			Console.OutputEncoding = System.Text.Encoding.Default;
 			Environment.Exit(1);
 		}
 
-		static void CalculateMD5(string filename) {
-			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
+		public const int LOG_ADD = 0;
+		public const int LOG_SUB = 1;
+		public const int LOG_UPD = 2;
+		public const int LOG_INFO = 0;
+		public const int LOG_ALERT = 1;
+		public const int LOG_WARNING = 2;
+		public const int LOG_ERROR = 3;
+		static int LogCallBackHandler(int op, string msg, int errlvl, int subidx) {
+			ConsoleColor clr = ConsoleColor.Gray;
+			switch (errlvl) {
+				case LOG_INFO: clr = ConsoleColor.DarkGreen; break;
+				case LOG_ALERT: clr = ConsoleColor.DarkCyan; break;
+				case LOG_WARNING: clr = ConsoleColor.DarkYellow; break;
+				case LOG_ERROR: clr = ConsoleColor.Red; break;
+			}
+			WriteLine(msg, clr);
+			return 0;
+		}
 
-			try {
-				using (var md5 = MD5.Create()) {
-					using (var stream = Alphaleonis.Win32.Filesystem.File.OpenRead(filename)) {
-						hash = md5.ComputeHash(stream);
-						hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-					}
-				}
-			} catch (IOException ex) {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine(fullpath + "\t" + ex.Message);
-				CleanExit();
+		static void ProgressCallBackHandler(int max, int value) {
+			if (max > 0) {
+			}
+			if (value >= 0) {
+				Write(".");
 			}
 		}
 
-		static void md5Read(string filename) {
-			hash = new byte[16];
-			uint bytesread = 0;
-			uint handle = 0;
-			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
-
-			try {
-				handle = CreateFileW(filename + ":md5", GENERIC_READ, FILE_SHARE_READ, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-			} catch (Exception ex) {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine(fullpath + "\t" + ex.Message);
-				CleanExit();
-			}
-			if (handle == 0xFFFFFFFF) {
-				TextFgColor(ConsoleColor.Yellow);
-				Console.WriteLine(fullpath + "\tNo MD5");
-				CleanExit();
-			}
-			ReadFile(handle, hash, 16, out bytesread, IntPtr.Zero);
-			hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-			TextFgColor(ConsoleColor.Green);
-			Console.WriteLine(fullpath + "\tAttached MD5\t" + hashString);
-			CloseHandle(handle);
+		static void DoEventCallbackHandler() {
+			//Write(".");
 		}
 
-		static void md5Generate(string filename) {
-			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
+		static void md5Read(HashInterop md5, string filename) {
+			byte[] hash;
+			string fullpath = Path.GetFullPath(filename);
+			hash = md5.Read(fullpath, true);
+			string hashString;
 
-			CalculateMD5(filename);
-			TextFgColor(ConsoleColor.Green);
-			Console.WriteLine(fullpath + "\tGen MD5\t" + hashString);
+			if (hash != null) {
+				hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+				WriteLine(fullpath + "\tAttached MD5\t" + hashString, ConsoleColor.Green);
+			}
 		}
 
-		static void md5Verify(string filename) {
+		static void md5Generate(HashInterop md5, string filename) {
+			string fullpath = Path.GetFullPath(filename);
+			byte[] hash;
+			string hashString;
+
+			hash = md5.Generate(filename);
+			if (hash != null) {
+				hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+				WriteLine(fullpath + "\tGen MD5\t" + hashString, ConsoleColor.Green);
+			}
+		}
+
+		static void md5Verify(HashInterop md5, string filename) {
+			byte[] hash;
+			string hashString;
 			byte[] storedhash = new byte[16];
-			string storedHashString;
-			uint bytesread = 0;
-			uint handle = 0;
+			string storedHashString = "";
 
-			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
-			try {
-				handle = CreateFileW(filename + ":md5", GENERIC_READ, FILE_SHARE_READ, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-			} catch (Exception ex) {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine(fullpath + "\t" + ex.Message);
-				CleanExit();
-			}
-			if (handle == 0xffffffff) {
-				TextFgColor(ConsoleColor.Yellow);
-				Console.WriteLine(fullpath + "\tNo MD5");
-				CleanExit();
-			}
-			ReadFile(handle, storedhash, 16, out bytesread, IntPtr.Zero);
-			storedHashString = BitConverter.ToString(storedhash).Replace("-", "").ToLowerInvariant();
-			CloseHandle(handle);
-			CalculateMD5(filename);
-			if (storedHashString == hashString) {
-				TextFgColor(ConsoleColor.Green);
-				Console.WriteLine(fullpath + "\tMatch MD5\t" + hashString);
+			string fullpath = Path.GetFullPath(filename);
+
+			storedhash = md5.Read(fullpath);
+			hash = md5.Generate(fullpath);
+			if (storedhash != null) {
+				storedHashString = BitConverter.ToString(storedhash).Replace("-", "").ToLowerInvariant();
 			} else {
-				TextFgColor(ConsoleColor.Yellow);
-				Console.WriteLine(fullpath + "\tMismatched MD5\t" + hashString + "\t" + storedHashString);
+				CleanExit();
+			}
+			hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+			if (storedHashString == hashString) {
+				WriteLine(fullpath + "\tMatch MD5\t" + hashString, ConsoleColor.Green);
+			} else {
+				WriteLine(fullpath + "\tMismatched MD5\t" + hashString + "\t" + storedHashString, ConsoleColor.Yellow);
 			}
 		}
 
-		static void md5Attach(string filename) {
-			uint byteswritten = 0;
-			uint handle = 0;
+		static void md5Attach(HashInterop md5, string filename) {
 			DateTime modify;
 
-			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
-			modify = Alphaleonis.Win32.Filesystem.File.GetLastWriteTime(filename);
-			try {
-				handle = CreateFileW(filename + ":md5", GENERIC_READ, FILE_SHARE_READ, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-			} catch (Exception ex) {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine(fullpath + "\t" + ex.Message);
-				CleanExit();
+			string fullpath = Path.GetFullPath(filename);
+			modify = File.GetLastWriteTime(filename);
+			byte[] hash;
+			string hashString;
+			bool success;
+
+			if (md5.Exist(fullpath)) {
+				WriteLine(fullpath + "\tMD5 Exists\t", ConsoleColor.DarkYellow);
+				return;
 			}
-			if (handle != 0xFFFFFFFF) {
-				TextFgColor(ConsoleColor.Yellow);
-				Console.WriteLine(fullpath + "\tExisting MD5");
-				CloseHandle(handle);
-				CleanExit();
+			hash = md5.Generate(fullpath, true);
+			success = md5.Attach(fullpath, hash, true);
+			if (success) {
+				hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+				WriteLine(fullpath + "\tAttach MD5\t" + hashString, ConsoleColor.Green);
+				File.SetLastWriteTime(filename, modify);
 			}
-			CalculateMD5(filename);
-			TextFgColor(ConsoleColor.Green);
-			Console.WriteLine(fullpath + "\tAttach MD5\t" + hashString);
-			try {
-				handle = CreateFileW(filename + ":md5", GENERIC_WRITE, FILE_SHARE_WRITE, IntPtr.Zero, OPEN_ALWAYS, 0, IntPtr.Zero);
-			} catch (Exception ex) {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine(fullpath + "\t" + ex.Message);
-				CleanExit();
-			}
-			WriteFile(handle, hash, 16, out byteswritten, IntPtr.Zero);
-			if (byteswritten != 16) {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine("16-byte MD5 Write Failure");
-			}
-			CloseHandle(handle);
-			Alphaleonis.Win32.Filesystem.File.SetLastWriteTime(filename, modify);
 		}
 
-		static void md5Detach(string filename) {
-			string fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(filename);
-
-			try {
-				DeleteFileW(filename + ":md5");
-			} catch (Exception ex) {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine(fullpath + "\t" + ex.Message);
-				CleanExit();
+		static void md5Detach(HashInterop md5, string filename) {
+			string fullpath = Path.GetFullPath(filename);
+			if (md5.Detach(fullpath, true)) {
+				WriteLine(fullpath + "\tDetach MD5\t", ConsoleColor.Green);
 			}
-			TextFgColor(ConsoleColor.Green);
-			Console.WriteLine(fullpath + "\tDetach MD5\t");
 		}
 
 		const int KB = 1024;
@@ -244,26 +209,38 @@ namespace md5hash {
 			return si;
 		}
 
+		static string ParseVersion() {
+			Assembly execAssembly = Assembly.GetCallingAssembly();
+			AssemblyName name = execAssembly.GetName();
+			string ver = String.Format("{0}.{1}.{2}", name.Version.Major.ToString(), name.Version.Minor.ToString(), name.Version.Build.ToString());
+			return ver;
+		}
+
 		static void PrintHelp() {
-			Console.WriteLine("md5hash v1.0.9 - (C)2018-2019 Y0tsuya");
-			Console.WriteLine("md5hash -[mode] -target [file] -min [size] -max [size] -followlink");
-			Console.WriteLine("\tmodes:");
-			Console.WriteLine("\t-read: read attached md5 stream");
-			Console.WriteLine("\t-generate: generate and print md5 checksum");
-			Console.WriteLine("\t-verify: generate md5 and verify against attached checksum");
-			Console.WriteLine("\t-attach: generate md5 and attach it to the target");
-			Console.WriteLine("\t-detach: detach md5 checksum from the target");
-			Console.WriteLine("");
-			Console.WriteLine("\t-min: minimum file size to consider (in bytes), defaults to 0");
-			Console.WriteLine("\t-max: maximum file size to consider (in bytes), defaults to 64-bit max");
-			Console.WriteLine("\t-followlink: follow soft links");
-			Console.WriteLine("\t-verbose: print extra debug info");
+			WriteLine("md5hash v" + ParseVersion() + " - (C)2018-2024 Y0tsuya");
+			WriteLine("md5hash -[mode] -target [file] -min [size] -max [size] -followlink");
+			WriteLine("\tmodes:");
+			WriteLine("\t-read: read attached md5 stream");
+			WriteLine("\t-generate: generate and print md5 checksum");
+			WriteLine("\t-verify: generate md5 and verify against attached checksum");
+			WriteLine("\t-attach: generate md5 and attach it to the target");
+			WriteLine("\t-detach: detach md5 checksum from the target");
+			WriteLine("");
+			WriteLine("\t-min: minimum file size to consider (in bytes), defaults to 0");
+			WriteLine("\t-max: maximum file size to consider (in bytes), defaults to 64-bit max");
+			WriteLine("\t-followlink: follow soft links");
+			WriteLine("\t-verbose: print extra debug info");
 		}
 
 		static void Main(string[] args) {
 			int c;
-			Alphaleonis.Win32.Filesystem.FileInfo fi = null;
+			FileInfo fi = null;
 			string fullpath = "";
+			string target = "";
+			Mode opmode = Mode.None;
+			long minsize = 0, maxsize = long.MaxValue;
+			bool followlink = false;
+			bool verbose;
 
 			if (args.Length == 0) {
 				PrintHelp();
@@ -272,7 +249,7 @@ namespace md5hash {
 
 			verbose = false;
 			Console.OutputEncoding = System.Text.Encoding.Unicode;
-			for (c = 0 ; c < args.Length ; c++) {
+			for (c = 0; c < args.Length; c++) {
 				if (args[c] == "-read") {
 					opmode = Mode.Read;
 				} else if (args[c] == "-verbose") {
@@ -298,78 +275,74 @@ namespace md5hash {
 			}
 
 			if (opmode == Mode.None) {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine("No opmode specified");
+				WriteLine("No opmode specified", ConsoleColor.Red);
 				CleanExit();
 			}
 			if (target == "") {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine("No target file specified");
+				WriteLine("No target file specified", ConsoleColor.Red);
 				CleanExit();
 			}
 
 			if (verbose) {
 				TextFgColor(ConsoleColor.Cyan);
-				Console.WriteLine("Mode: " + opmode.ToString());
-				Console.WriteLine("Min: " + minsize);
-				Console.WriteLine("Max: " + maxsize);
-				Console.WriteLine("Target: " + target);
+				WriteLine("Mode: " + opmode.ToString());
+				WriteLine("Min: " + minsize);
+				WriteLine("Max: " + maxsize);
+				WriteLine("Target: " + target);
 			}
 
-			if (!Alphaleonis.Win32.Filesystem.File.Exists(target)) {
+			if (!File.Exists(target)) {
 				System.Threading.Thread.Sleep(100);
-				if (!Alphaleonis.Win32.Filesystem.File.Exists(target)) { // file really doesn't exist
-					fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(target);
-					TextFgColor(ConsoleColor.Red);
-					Console.WriteLine(fullpath + "\tNOT FOUND");
+				if (!File.Exists(target)) { // file really doesn't exist
+					fullpath = Path.GetFullPath(target);
+					WriteLine(fullpath + "\tNOT FOUND", ConsoleColor.Red);
 					CleanExit();
 				}
 			}
 
-			if ((Alphaleonis.Win32.Filesystem.File.GetAttributes(target) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint) {
+			if ((File.GetAttributes(target) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint) {
 				if (!followlink) {
-					fullpath = Alphaleonis.Win32.Filesystem.Path.GetFullPath(target);
-					TextFgColor(ConsoleColor.Yellow);
-					Console.WriteLine(fullpath + "\tLINK");
+					fullpath = Path.GetFullPath(target);
+					WriteLine(fullpath + "\tLINK", ConsoleColor.Yellow);
 					CleanExit();
 				}
 			}
 
 			try {
-				fi = new Alphaleonis.Win32.Filesystem.FileInfo(target);
+				fi = new FileInfo(target);
 			} catch (IOException ex) {
-				TextFgColor(ConsoleColor.Red);
-				Console.WriteLine(fullpath + "\t" + ex.Message);
+				WriteLine(fullpath + "\t" + ex.Message, ConsoleColor.Red);
 				CleanExit();
 			}
 
 			if (fi.Length < minsize) {
-				TextFgColor(ConsoleColor.Yellow);
-				Console.WriteLine(target + "\tunder minimum size " + EncodeByteSize(minsize));
+				WriteLine(target + "\tunder minimum size " + EncodeByteSize(minsize), ConsoleColor.Yellow);
 				CleanExit();
 			}
 
 			if (fi.Length > maxsize) {
-				TextFgColor(ConsoleColor.Yellow);
-				Console.WriteLine(target + "\tover maximum size " + EncodeByteSize(maxsize));
+				WriteLine(target + "\tover maximum size " + EncodeByteSize(maxsize), ConsoleColor.Yellow);
 				CleanExit();
 			}
 
+			HashInterop myMD5 = new HashInterop();
+			myMD5.LogCallBack += LogCallBackHandler;
+
 			switch (opmode) {
 				case Mode.Read:
-					md5Read(target);
+					md5Read(myMD5, target);
 					break;
 				case Mode.Generate:
-					md5Generate(target);
+					md5Generate(myMD5, target);
 					break;
 				case Mode.Verify:
-					md5Verify(target);
+					md5Verify(myMD5, target);
 					break;
 				case Mode.Attach:
-					md5Attach(target);
+					md5Attach(myMD5, target);
 					break;
 				case Mode.Detach:
-					md5Detach(target);
+					md5Detach(myMD5, target);
 					break;
 				default: break;
 			}
