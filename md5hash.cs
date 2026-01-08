@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -25,6 +25,8 @@ using CustomLibs;
 //			Integrate HashInterop
 // v2.0.1	Fix attach operation generating 0000000 MD5
 // v2.0.2	Skip already attached hashes
+// v2.1.0	Move to .NET 8
+// v2.1.2	Change HashInterop to prepend @"\\?\" + filename for explicit LFN handling
 
 namespace md5hash {
 	class md5hash {
@@ -97,6 +99,7 @@ namespace md5hash {
 		static void md5Read(HashInterop md5, string filename) {
 			byte[] hash;
 			string fullpath = Path.GetFullPath(filename);
+
 			hash = md5.Read(fullpath, true);
 			string hashString;
 
@@ -129,7 +132,7 @@ namespace md5hash {
 			storedhash = md5.Read(fullpath);
 			hash = md5.Generate(fullpath);
 			if (storedhash != null) {
-				storedHashString = BitConverter.ToString(storedhash).Replace("-", "").ToLowerInvariant();
+				storedHashString = BitConverter.ToString(storedhash).Replace(" - ", "").ToLowerInvariant();
 			} else {
 				CleanExit();
 			}
